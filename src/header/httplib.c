@@ -22,19 +22,20 @@ char *HTTPFindRequestMethod(int *programState, char *requestData) {
 }
 
 // Find the requested path (e.g., /index.html) and convert it to a local path
-char *HTTPFindRequestPath(int *programState, char *requestData) {
+char *HTTPFindRequestPath(int *programState, char *requestData,
+                          char *homePage) {
   char path[256];
 
   // Extract the requested path
   int pathFound = sscanf(requestData, "%*s %s", path);
 
   // Convert to a local path
+  // Here you can add multiple web pages for various request paths
+  // For now, just send back the page chosen by the server owner when /
+  // is requested
   if (pathFound == 1 && strcmp(path, "/") == 0) {
     *programState = STATE_GOOD;
-    // Set this to your index.html page
-    static char localPath[128] = "/home/nomad/.webserver/index.html";
-
-    return localPath;
+    return homePage;
   }
   // Unable to find the path
   *programState = STATE_MALFORMED_REQUEST;

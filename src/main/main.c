@@ -8,18 +8,19 @@
 #include <string.h>
 
 // Constants
-#define MIN_CMD_LINE_ARGS 2 // Program name + port
+#define MIN_CMD_LINE_ARGS 3 // Program name + port + path to HTML document
 
 // Entry point
 int main(int argc, char *argv[]) {
   if (argc < MIN_CMD_LINE_ARGS) {
-    printf("Usage: ./nobleserver <Port>\n");
+    printf("Usage: ./nobleserver <Port> <Path to homepage>\n");
     return STATE_BAD_USAGE;
   }
 
   // Main variables
   int programState;         // Track the program state
   int port = atoi(argv[1]); // Port number to listen on
+  char *homePage = argv[2];
 
   // Create server socket
   int serverSocketFD = TCPServerSetup(&programState, port);
@@ -39,7 +40,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Allocate memory for receiving data
-    char buffer[4096]; // or dynamically allocate as needed
+    char buffer[4096];
     ssize_t bytesRecv =
         TCPRecv(&programState, clientSocketFD, buffer, sizeof(buffer));
 
@@ -57,7 +58,7 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
-    char *requestPath = HTTPFindRequestPath(&programState, buffer);
+    char *requestPath = HTTPFindRequestPath(&programState, buffer, homePage);
     if (requestPath == NULL) {
       printf("[-] Failed to find request path\n");
       TCPClose(&programState, clientSocketFD);
