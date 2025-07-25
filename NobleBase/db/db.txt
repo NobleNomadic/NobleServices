@@ -1,0 +1,7 @@
+users{{{john_doe{{{age: 30
+users{{{jane_doe{{{age: 25
+products{{{laptop{{{brand: Dell, price: 899
+products{{{phone{{{brand: Apple, price: 999
+settings{{{theme{{{dark
+settings{{{language{{{english
+settings{{{font{{{small
