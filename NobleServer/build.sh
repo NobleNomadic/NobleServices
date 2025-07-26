@@ -22,4 +22,4 @@ mv ../NobleServer.jar ../build
 cd ../build
 
 # Run the JAR file (with argument)
-java -jar "$JAR_NAME" 8008
+java -jar "$JAR_NAME" 8008 ../route/route.txt

@@ -1,5 +1,7 @@
 import java.net.*;
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 // NobleServer.java - Main server object
 // Usage: java NobleServer (port)
@@ -7,6 +9,7 @@ public class NobleServer {
   // Properties
   ServerSocket serverSocket;
   int serverPort;
+  String[] routingData;
 
   // Data structure for a client socket and data streams
   class ClientConnection {
@@ -15,55 +18,80 @@ public class NobleServer {
     PrintWriter out;     // Output stream
 
     // Constructor - Setup data streams
-    public ClientConnection() {
-      return;
+    public ClientConnection(Socket clientSocket) {
+      try {
+        this.clientSocket = clientSocket;
+        this.in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+        this.out = new PrintWriter(clientSocket.getOutputStream(), true);
+      }
+      // Catch IO errors
+      catch (IOException e) {
+        System.out.println("[-] Error creating data streams for client: " + e);
+      }
     }
-  }
+
+  } // End ClientConnection
+
 
   // Entry point
   public static void main(String[] args) {
     // Bad argument usage
-    if (args.length < 1) {
-      System.out.println("Usage: java NobleServer (Server port)");
+    if (args.length < 2) {
+      System.out.println("Usage: java NobleServer (Server port) (Routing file)");
       System.exit(1);
     }
 
     // Extract arguments
     int port = Integer.parseInt(args[0]);
+    String routerFilename = args[1];
 
     // Main instance of the server
-    NobleServer nobleServer = new NobleServer(port);
+    NobleServer nobleServer = new NobleServer(port, routerFilename);
 
     // Main loop
     while (true) {
-      // Create a new client object
-      ClientConnection clientConnection = nobleServer.getClientConnection();
-      System.out.println("[+] New connection");
+      try {
+        // Create a new client object
+        ClientConnection clientConnection = nobleServer.getClientConnection();
+        System.out.println("[+] New connection");
 
-      // Finish connection
-      nobleServer.closeClientConnection(clientConnection);
+        // Receive and process a request
+        String request = clientConnection.in.readLine();
+        String response = nobleServer.processRequest(request);
 
-      if (false) {
-        break;
+        // Send the response back
+        System.out.println("[*] Sending response");
+        clientConnection.out.println(response);
+
+        // Finish connection
+        nobleServer.closeClientConnection(clientConnection);
+      }
+
+      // Catch socket failures
+      catch (IOException e) {
+        System.out.println("[-] Error: " + e);
+        continue;
       }
     }
-
-    return;
   }
 
   // Constructor for class
-  public NobleServer(int port) {
+  public NobleServer(int port, String routingFilename) {
     try {
       // Set properties
       this.serverPort = port;
       this.serverSocket = new ServerSocket(this.serverPort);
 
       System.out.println("[*] Server starting");
-      return;
+
+      // Read contents of the routing file
+      String routeFileString = Files.readString(Path.of(routingFilename));
+
+      this.routingData = routeFileString.split("\n");
     }
     catch (IOException e) {
+      System.out.println("[-] Error setting up server: " + e);
       System.exit(1);
-      return;
     }
   }
 
@@ -75,13 +103,10 @@ public class NobleServer {
       Socket clientSocket = this.serverSocket.accept();
 
       // Create the data structure
-      ClientConnection clientConnection = new ClientConnection();
+      ClientConnection clientConnection = new ClientConnection(clientSocket);
 
       // Set the data
       clientConnection.clientSocket = clientSocket;
-      clientConnection.in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-      clientConnection.out = new PrintWriter(clientSocket.getOutputStream(), true);
-
       return clientConnection;
     }
     // Catch socket errors
@@ -91,6 +116,46 @@ public class NobleServer {
     }
   }
 
+  // Process a request and return a raw string response to send back
+  public String processRequest(String requestLine) {
+    System.out.println("[*] Processing: " + requestLine);
+
+    if (requestLine == null || requestLine.isBlank()) {
+      return "HTTP/1.1 400 Bad Request\r\n\r\nMissing or empty request.";
+    }
+
+    String[] tokens = requestLine.split(" ");
+    if (tokens.length < 3) {
+      return "HTTP/1.1 400 Bad Request\r\n\r\nMalformed HTTP request line.";
+    }
+
+    String method = tokens[0];
+    String path = tokens[1];
+
+    if (!method.equals("GET")) {
+      return "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\n\r\nOnly GET is supported.";
+    }
+
+    for (String route : routingData) {
+      String[] parts = route.strip().split(" ", 2);
+      if (parts.length < 2) continue;
+
+      String routePath = parts[0];
+      String filePath = parts[1];
+
+      if (routePath.equals(path)) {
+        try {
+          String body = Files.readString(Path.of(filePath));
+          return "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + body;
+        } catch (IOException e) {
+          return "HTTP/1.1 500 Internal Server Error\r\n\r\nCould not read file: " + filePath;
+        }
+      }
+    }
+
+    return "HTTP/1.1 404 Not Found\r\n\r\nThe requested path was not found.";
+  }
+  
   // Handle closing the client connection
   public int closeClientConnection(ClientConnection clientConnection) {
     try {
