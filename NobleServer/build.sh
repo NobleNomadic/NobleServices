@@ -21,5 +21,5 @@ jar cfe "../$JAR_NAME" "$MAIN_CLASS" "$MAIN_CLASS.class" "$MAIN_CLASS\$ClientCon
 mv ../NobleServer.jar ../build
 cd ../build
 
-# Run the JAR file (with argument)
+# Run the JAR file (Change these arguments to fit your server)
 java -jar "$JAR_NAME" 8008 ../route/route.txt

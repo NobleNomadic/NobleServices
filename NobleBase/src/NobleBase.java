@@ -1,205 +1,203 @@
 import java.net.*;
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.io.FileWriter;
 
-class NobleBase {
+public class NobleBase {
   // Properties
-  int serverPort;
-  String databaseFile;
   ServerSocket serverSocket;
+  int serverPort;
+  String databaseFilename;
+
+  // Data structure to handle a client socket and data streams
+  class ClientConnection {
+    Socket clientSocket; // Client socket object
+    BufferedReader in;   // Input stream
+    PrintWriter out;     // Output stream
+
+    // Constructor to setup data streams
+    public ClientConnection(Socket clientSocket) {
+      try {
+        this.clientSocket = clientSocket;
+        this.in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+        this.out = new PrintWriter(clientSocket.getOutputStream(), true);
+      }
+      // Catch IO errors while setting up socket
+      catch (IOException e) {
+        System.out.println("[-] Error creating data streams for client: " + e);
+      }
+    }
+  }
 
   // Entry point
   public static void main(String[] args) {
-    int commandLineArguments = 2;
-    // Exit on bad usage
-    if (args.length < commandLineArguments) {
-      System.out.println("Usage: java NobleBase <Server port> <Database file>");
-      return;
+    // Handle bad argument usage
+    if (args.length < 2) {
+      System.out.println("Usage: java NobleBase (Server port) (Database file)");
+      System.exit(1);
     }
 
-    // Setup main instance of server object
+    // Extract arguments
     int port = Integer.parseInt(args[0]);
-    String databaseFile = args[1];
-    NobleBase nobleBase = new NobleBase(port, databaseFile);
-    System.out.println("[*] Initialising server on port " + nobleBase.serverPort + " with " + nobleBase.databaseFile);
+    String databaseName = args[1];
 
-    // Enter the main database loop
-    nobleBase.mainDatabaseLoop();
+    // Main instance of the server
+    NobleBase nobleBase = new NobleBase(port, databaseName);
+
+    // Enter the main loop
+    while (true) {
+      try {
+        // Accept a client connection
+        ClientConnection clientConnection = nobleBase.getClientConnection();
+        if (clientConnection == null) {
+          continue;
+        }
+        System.out.println("[+] New connection");
+
+
+        // Receive request and process
+        String request = clientConnection.in.readLine();
+        String response = nobleBase.processRequest(request);
+
+        // Send response back
+        System.out.println("[*] Sending response");
+        clientConnection.out.println(response);
+
+        // Finish connection
+        nobleBase.closeClientConnection(clientConnection);
+      }
+      catch (IOException e) {
+        System.out.println("[-] Error: " + e);
+        continue;
+      }
+    }
   }
 
-  // Constructor
-  public NobleBase(int port, String databaseFile) {
+  // Contstructor
+  public NobleBase(int port, String databaseName) {
     // Set properties
     this.serverPort = port;
-    this.databaseFile = databaseFile;
+    this.databaseFilename = databaseName;
 
-    // Create the socket on the chosen port
+    System.out.println("[*] Database Server starting");
+
+    // Create main server socket
     try {
       this.serverSocket = new ServerSocket(this.serverPort);
     }
-    // Failed to create socket
     catch (IOException e) {
-      System.out.println("[-] Failed to create server socket: " + e);
+      System.out.println("[-] Error creating server socket: " + e);
       System.exit(1);
     }
   }
 
-  // Main database loop for accepting and handling clients
-  public void mainDatabaseLoop() {
-    while (true) {
-      try {
-        // Accept a client connection
-        Socket clientSocket = this.serverSocket.accept();
-        System.out.println("[+] New connection");
+  // Using the main server socket, return a client connection
+  public ClientConnection getClientConnection() {
+    System.out.println("[*] Waiting for connection on port " + this.serverPort);
 
-        // Input/Output streams
-        BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-        PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
+    try {
+      // Accept socket connection
+      Socket clientSocket = this.serverSocket.accept();
 
-        // Receive the initial request
-        String request = in.readLine();
-        String[] requestTokens = request.split("\\{\\{\\{");
-
-        if (requestTokens.length == 0) {
-          in.close();
-          out.close();
-          clientSocket.close();
-          continue;
-        }
-
-        // Check what type of request was made
-        if (requestTokens.length == 4 && requestTokens[0].equals("write")) {
-          databaseWrite(requestTokens);
-          out.println("GOOD");
-        } else if (requestTokens.length == 2 && requestTokens[0].equals("read")) {
-          out.println(databaseRead(requestTokens));  // Output the result of the read operation
-        } else if (requestTokens[0].equals("get")) {
-          out.println(databaseGet());
-        } else if (requestTokens.length == 3 && requestTokens[0].equals("delete")) {
-          databaseDelete(requestTokens);
-          out.println("GOOD");
-        }
-
-        // Close connection
-        in.close();
-        out.close();
-        clientSocket.close();
+      // Create the data structure and return
+      ClientConnection clientConnection = new ClientConnection(clientSocket);
+      return clientConnection;
     }
-    // Catch socket failures
+    // Catch socket errors
     catch (IOException e) {
-        System.out.println("[-] Failed to process client connection: " + e.getMessage());
-        // You can add more error handling here if needed
-      }
+      System.out.println("[-] Failed to accept client connection: " + e);
+      return null;
     }
   }
 
+  // Process a request from a client, then peform the needed operation and send back HTTP response
+  public String processRequest(String request) {
+    // Process the request as a set of tokens
+    String[] requestTokens = request.split(" ");
 
-  // Handle different requests and return a status code
-  // Create subsection with data in a section. Usage: writedata (section) (subsection) (data)
-  private int databaseWrite(String[] tokenList) {
+    // Validate tokens
+    // Missing request, no tokens
+    if (requestTokens.length == 0) {
+      return "HTTP/1.1 400 Bad Request\r\n\r\nMissing or empty request.";
+    }
+    // Malformed request, not enough tokens to process
+    else if (requestTokens.length < 3) {
+      return "HTTP/1.1 400 Bad Request\r\n\r\nMalformed HTTP request.";
+    }
+
+    // Tokens good, extract request
+    String method = requestTokens[0];
+
+    // POST method - write new key value pair
+    if (method.equals("POST")) {
+      return databaseWrite(requestTokens);
+    }
+    // GET method - read a value from key
+    else if (method.equals("GET")) {
+      return databaseRead(requestTokens);
+    }
+    // PUT method - update a key's value
+    else if (method.equals("PUT")) {
+      return databaseUpdate(requestTokens);
+    }
+    // DELETE method - delete a database entry
+    else if (method.equals("DELETE")) {
+      return databaseDelete(requestTokens);
+    }
+
+    // No valid request method found
+    return "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET POST PUT DELETE\r\n\r\n";
+  }
+
+  // ///////// CRUD operations to database /////////
+  // Add a new key value pair (Usage: POST /(KEY)/(VALUE) HTTP/1.1\r\n(HEADERS)\r\n\r\n)
+  private String databaseWrite(String[] requestTokens) {
+    // Extract the data that needs to be written
+    String[] newData = requestTokens[1].split("/");
+    // Validate newData tokens
+    if (newData.length != 3) {
+      return "HTTP/1.1 400 Bad Request\r\n\r\nBad path for POST method";
+    }
+    String dataToWrite = newData[1] + ":" + newData[2] + "\n";
+
+    // Append the new line to the bottom of the file with FileWriter
+    try (FileWriter fileWriter = new FileWriter(this.databaseFilename, true)) {
+      fileWriter.write(dataToWrite);
+    }
+    // Failed to write to file
+    catch (IOException e) {
+      System.out.println("[-] Error making POST to database: " + e);
+      return "HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to write to database.";
+    }
+
+    // No errors returned yet, function succeeded
+    return "HTTP/1.1 200 OK\r\n\r\nPOST to database success.";
+  }
+  // Take a key, and return the value (Usage: GET /(KEY) HTTP/1.1\r\n(HEADERS)\r\n\r\n)
+  private String databaseRead(String[] requestTokens) {
+    return null;
+  }
+  // Take a key, and update the value (Usage: PUT /(KEY)/(VALUE) HTTP/1.1\r\n(HEADERS)\r\n\r\n)
+  private String databaseUpdate(String[] requestTokens) {
+    return null;
+  }
+  // Delete a key and value from the database (Usage: DELETE /(KEY) HTTP/1.1\r\n(HEADERS)\r\n\r\n)
+  private String databaseDelete(String[] requestTokens) {
+    return null;
+  }
+
+  // Handle closing a client connection
+  public int closeClientConnection(ClientConnection clientConnection) {
     try {
-      // Extract data from request
-      String sectionName = tokenList[1];
-      String subsectionName = tokenList[2];
-      String data = tokenList[3];
+      clientConnection.clientSocket.close();
+      clientConnection.in.close();
+      clientConnection.out.close();
 
-      // This is the actual data you want to write
-      String newDataString = sectionName + "{{{" + subsectionName + "{{{" + data + "\n";
-
-      FileWriter fileWriter = new FileWriter(this.databaseFile, true);
-      fileWriter.write(newDataString);
-      fileWriter.close();
-
-      System.out.println("[+] Wrote data: " + newDataString.trim());
       return 0;
     }
+    // Catch IO errors
     catch (IOException e) {
-      System.out.println("[-] Error writing to file: " + e);
+      System.out.println("[-] Error closing connection: " + e);
       return -1;
-    }
-  }
-
-  // Find and read data from database file then return found data. Usage: read (section)
-  // Return all data with that section
-  private String databaseRead(String[] tokenList) {
-    try {
-      Path path = Path.of(this.databaseFile);
-
-      // Read the contents of the file as a single string, then convert to a list of lines
-      String databaseContents = Files.readString(path);
-      String[] databaseLines = databaseContents.split("\n");
-
-      // String to send back
-      StringBuilder returnData = new StringBuilder();
-
-      // Check each line of the file for the correct section
-      for (String line : databaseLines) {
-        String[] lineTokens = line.split("\\{\\{\\{");
-        if (lineTokens[0].equals(tokenList[1])) {  // Matching section
-          returnData.append(line).append("\n");
-        }
-      }
-
-      return returnData.toString();
-    }
-    catch (IOException e) {
-      System.out.println("[-] Error reading file: " + e);
-      return null;
-    }
-  }
-
-  // Get the entire contents of the database and return them
-  private String databaseGet() {
-    try {
-      Path path = Path.of(this.databaseFile);
-
-      // Read the contents as a single string and return them
-      String databaseContents = Files.readString(path);
-      return databaseContents;
-    }
-    catch (IOException e) {
-      System.out.println("[-] Error getting database: " + e);
-      return null;
-    }
-  }
-
-  // Delete data on the database file. Usage: delete (section) (subsection)
-  private int databaseDelete(String[] tokenList) {
-    try {
-        // Read the entire file content
-        Path path = Path.of(this.databaseFile);
-        String databaseContents = Files.readString(path);
-        String[] databaseLines = databaseContents.split("\n");
-
-        // StringBuilder to hold updated content after deletion
-        StringBuilder updatedData = new StringBuilder();
-
-        // Iterate over lines, adding them to updated data if they don't match the section/subsection
-        for (String line : databaseLines) {
-            // Split line by the delimiter `{{{`
-            String[] lineTokens = line.split("\\{\\{\\{");
-
-            // Check if this line matches the section and subsection to be deleted
-            if (lineTokens.length >= 3 &&
-                lineTokens[0].equals(tokenList[1]) &&   // Match section
-                lineTokens[1].equals(tokenList[2])) {  // Match subsection
-                // Skip this line (it's the one we want to delete)
-                continue;
-            }
-
-            // Otherwise, keep this line in the updated data
-            updatedData.append(line).append("\n");
-        }
-
-        // Overwrite the file with the updated content
-        Files.writeString(path, updatedData.toString());
-        System.out.println("[+] Deleted data: " + tokenList[1] + " - " + tokenList[2]);
-        return 0;
-    }
-    catch (IOException e) {
-        System.out.println("[-] Error deleting data: " + e);
-        return -1;
     }
   }
 }

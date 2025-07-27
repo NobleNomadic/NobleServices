@@ -53,6 +53,10 @@ public class NobleServer {
       try {
         // Create a new client object
         ClientConnection clientConnection = nobleServer.getClientConnection();
+        if (clientConnection == null) {
+          continue;
+        }
+
         System.out.println("[+] New connection");
 
         // Receive and process a request
@@ -82,7 +86,7 @@ public class NobleServer {
       this.serverPort = port;
       this.serverSocket = new ServerSocket(this.serverPort);
 
-      System.out.println("[*] Server starting");
+      System.out.println("[*] HTTP Server starting");
 
       // Read contents of the routing file
       String routeFileString = Files.readString(Path.of(routingFilename));
@@ -104,23 +108,20 @@ public class NobleServer {
 
       // Create the data structure
       ClientConnection clientConnection = new ClientConnection(clientSocket);
-
-      // Set the data
-      clientConnection.clientSocket = clientSocket;
       return clientConnection;
     }
     // Catch socket errors
     catch (IOException e) {
-      System.out.println("[-] Failed to accept client connection");
+      System.out.println("[-] Failed to accept client connection: " + e);
       return null;
     }
   }
 
   // Process a request and return a raw string response to send back
-  public String processRequest(String requestLine) {
-    System.out.println("[*] Processing: " + requestLine);
+  public String processRequest(String request) {
+    System.out.println("[*] Processing: " + request);
 
-    if (requestLine == null || requestLine.isBlank()) {
+    if (request == null) {
       return "HTTP/1.1 400 Bad Request\r\n\r\nMissing or empty request.";
     }
 
