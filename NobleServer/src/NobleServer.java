@@ -61,6 +61,12 @@ public class NobleServer {
 
         // Receive and process a request
         String request = clientConnection.in.readLine();
+        if (request == null) {
+          nobleServer.closeClientConnection(clientConnection);
+          continue;
+        }
+
+        // Process the request
         String response = nobleServer.processRequest(request);
 
         // Send the response back
@@ -125,7 +131,7 @@ public class NobleServer {
       return "HTTP/1.1 400 Bad Request\r\n\r\nMissing or empty request.";
     }
 
-    String[] tokens = requestLine.split(" ");
+    String[] tokens = request.split(" ");
     if (tokens.length < 3) {
       return "HTTP/1.1 400 Bad Request\r\n\r\nMalformed HTTP request line.";
     }
@@ -146,14 +152,18 @@ public class NobleServer {
 
       if (routePath.equals(path)) {
         try {
+          // Send back the body
           String body = Files.readString(Path.of(filePath));
           return "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + body;
-        } catch (IOException e) {
+        }
+        // IOException
+        catch (IOException e) {
           return "HTTP/1.1 500 Internal Server Error\r\n\r\nCould not read file: " + filePath;
         }
       }
     }
 
+    // Could not find the file to return
     return "HTTP/1.1 404 Not Found\r\n\r\nThe requested path was not found.";
   }
   

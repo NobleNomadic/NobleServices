@@ -1,6 +1,8 @@
 import java.net.*;
 import java.io.*;
 import java.io.FileWriter;
+import java.util.List;
+import java.nio.file.*;
 
 public class NobleBase {
   // Properties
@@ -54,8 +56,14 @@ public class NobleBase {
         System.out.println("[+] New connection");
 
 
-        // Receive request and process
+        // Receive request from client
         String request = clientConnection.in.readLine();
+        if (request == null) {
+          nobleBase.closeClientConnection(clientConnection);
+          continue;
+        }
+
+        // Process request
         String response = nobleBase.processRequest(request);
 
         // Send response back
@@ -149,13 +157,14 @@ public class NobleBase {
   }
 
   // ///////// CRUD operations to database /////////
+  // Return a string which is sent back over socket to client
   // Add a new key value pair (Usage: POST /(KEY)/(VALUE) HTTP/1.1\r\n(HEADERS)\r\n\r\n)
   private String databaseWrite(String[] requestTokens) {
     // Extract the data that needs to be written
     String[] newData = requestTokens[1].split("/");
     // Validate newData tokens
     if (newData.length != 3) {
-      return "HTTP/1.1 400 Bad Request\r\n\r\nBad path for POST method";
+      return "HTTP/1.1 400 Bad Request\r\n\r\nBad path for POST method.";
     }
     String dataToWrite = newData[1] + ":" + newData[2] + "\n";
 
@@ -172,17 +181,119 @@ public class NobleBase {
     // No errors returned yet, function succeeded
     return "HTTP/1.1 200 OK\r\n\r\nPOST to database success.";
   }
+
   // Take a key, and return the value (Usage: GET /(KEY) HTTP/1.1\r\n(HEADERS)\r\n\r\n)
   private String databaseRead(String[] requestTokens) {
-    return null;
+    // Extract key from path
+    String[] keyData = requestTokens[1].split("/");
+    if (keyData.length != 2) {
+      return "HTTP/1.1 400 Bad Request\r\n\r\nBad path for GET method.";
+    }
+
+    String key = keyData[1];
+
+    // Read file and search for key
+    try {
+      List<String> lines = Files.readAllLines(Paths.get(this.databaseFilename));
+
+      for (String line : lines) {
+        if (line.startsWith(key + ":")) {
+          String[] parts = line.split(":", 2); // only split once
+          if (parts.length == 2) {
+            return "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n" + parts[1];
+          } else {
+            return "HTTP/1.1 500 Internal Server Error\r\n\r\nCorrupted database line.";
+          }
+        }
+      }
+
+      return "HTTP/1.1 404 Not Found\r\n\r\nThe requested key was not found in database.";
+
+    }
+    catch (IOException e) {
+      System.out.println("[-] Error reading database file: " + e);
+      return "HTTP/1.1 500 Internal Server Error\r\n\r\nCould not read from database file.";
+    }
   }
-  // Take a key, and update the value (Usage: PUT /(KEY)/(VALUE) HTTP/1.1\r\n(HEADERS)\r\n\r\n)
+
   private String databaseUpdate(String[] requestTokens) {
-    return null;
+    // Extract the key and new value
+    String[] newData = requestTokens[1].split("/");
+    if (newData.length != 3) {
+      return "HTTP/1.1 400 Bad Request\r\n\r\nBad path for PUT method.";
+    }
+    String key = newData[1];
+    String newValue = newData[2];
+
+    // Read the current lines from the database file
+    try {
+      List<String> lines = Files.readAllLines(Paths.get(this.databaseFilename));
+      boolean keyFound = false;
+
+      // Modify the correct line with the new value
+      for (int i = 0; i < lines.size(); i++) {
+        String line = lines.get(i);
+        if (line.startsWith(key + ":")) {
+          lines.set(i, key + ":" + newValue); // Update value
+          keyFound = true;
+          break;
+        }
+      }
+
+      // If the key was not found, return 404
+      if (!keyFound) {
+        return "HTTP/1.1 404 Not Found\r\n\r\nThe requested key was not found in database.";
+      }
+
+      // Write the modified data back to the file
+      Files.write(Paths.get(this.databaseFilename), lines);
+      return "HTTP/1.1 200 OK\r\n\r\nPUT to database success.";
+    }
+    // Catch file interaction failure
+    catch (IOException e) {
+      System.out.println("[-] Error updating database file: " + e);
+      return "HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to update database.";
+    }
   }
+
   // Delete a key and value from the database (Usage: DELETE /(KEY) HTTP/1.1\r\n(HEADERS)\r\n\r\n)
   private String databaseDelete(String[] requestTokens) {
-    return null;
+    // Extract the key to delete
+    String[] keyData = requestTokens[1].split("/");
+    if (keyData.length != 2) {
+      return "HTTP/1.1 400 Bad Request\r\n\r\nBad path for DELETE method.";
+    }
+    String key = keyData[1];
+
+    // Read the current lines from the database file
+    try {
+      List<String> lines = Files.readAllLines(Paths.get(this.databaseFilename));
+      boolean keyFound = false;
+
+      // Search and remove the line for the key
+      for (int i = 0; i < lines.size(); i++) {
+        String line = lines.get(i);
+        if (line.startsWith(key + ":")) {
+          lines.remove(i);
+          keyFound = true;
+          break;
+        }
+      }
+
+      // If the key was not found, return 404
+      if (!keyFound) {
+        return "HTTP/1.1 404 Not Found\r\n\r\nThe requested key was not found in database.";
+      }
+
+      // Write the updated data back to the file
+      Files.write(Paths.get(this.databaseFilename), lines);
+      return "HTTP/1.1 200 OK\r\n\r\nDELETE from database success.";
+    }
+    // Catch file interaction errors
+    catch (IOException e) {
+      System.out.println("[-] Error deleting from database file: " + e);
+      return "HTTP/1.1 500 Internal Server Error\r\n\r\nFailed to delete from database.";
+    }
   }
 
   // Handle closing a client connection
