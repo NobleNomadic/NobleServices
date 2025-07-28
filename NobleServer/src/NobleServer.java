@@ -70,7 +70,7 @@ public class NobleServer {
         String response = nobleServer.processRequest(request);
 
         // Send the response back
-        System.out.println("[*] Sending response");
+        System.out.println("[*] Sending response: " + response);
         clientConnection.out.println(response);
 
         // Finish connection
@@ -144,7 +144,7 @@ public class NobleServer {
     }
 
     for (String route : routingData) {
-      String[] parts = route.strip().split(" ", 2);
+      String[] parts = route.strip().split(":", 2);
       if (parts.length < 2) continue;
 
       String routePath = parts[0];
