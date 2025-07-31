@@ -152,9 +152,11 @@ public class NobleServer {
 
       if (routePath.equals(path)) {
         try {
+          // Get content type
+          String contentType = getContentType(filePath);
           // Send back the body
           String body = Files.readString(Path.of(filePath));
-          return "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + body;
+          return "HTTP/1.1 200 OK\r\nContent-Type: " + contentType + "\r\n\r\n" + body;
         }
         // IOException
         catch (IOException e) {
@@ -166,7 +168,36 @@ public class NobleServer {
     // Could not find the file to return
     return "HTTP/1.1 404 Not Found\r\n\r\nThe requested path was not found.";
   }
-  
+
+  // Check the ending of the file path and set the correct content type
+  private String getContentType(String file) {
+    // Check file extension and return the appropriate MIME type
+    if (file.endsWith(".html") || file.endsWith(".htm")) {
+      return "text/html";
+    } else if (file.endsWith(".css")) {
+        return "text/css";
+    } else if (file.endsWith(".js")) {
+        return "application/javascript";
+    } else if (file.endsWith(".json")) {
+        return "application/json";
+    } else if (file.endsWith(".png")) {
+        return "image/png";
+    } else if (file.endsWith(".jpg") || file.endsWith(".jpeg")) {
+        return "image/jpeg";
+    } else if (file.endsWith(".gif")) {
+      return "image/gif";
+    } else if (file.endsWith(".txt")) {
+      return "text/plain";
+    } else if (file.endsWith(".xml")) {
+      return "application/xml";
+    } else if (file.endsWith(".pdf")) {
+      return "application/pdf";
+    } else {
+        // Default to plain
+        return "text/plain";
+    }
+}
+
   // Handle closing the client connection
   public int closeClientConnection(ClientConnection clientConnection) {
     try {
